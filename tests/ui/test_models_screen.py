@@ -224,3 +224,32 @@ async def test_invalid_port_blocks_start(root, registry):
         await pilot.click("#start")
         await pilot.pause()
         assert app.started == [] and app.screen.status_is_error
+
+
+async def test_download_unexpected_error_is_reported_not_fatal(root, registry, monkeypatch):
+    import tarfile
+    setup_root(root, registry, installed=False)
+    monkeypatch.setattr(downloads, "install_runtime", lambda *a, **k: (_ for _ in ()).throw(tarfile.ReadError("not a tar")))
+    app = RecordingApp(root)
+    async with app.run_test(size=SIZE) as pilot:
+        await pilot.press("d")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app.is_running and app.screen.status_is_error and "not a tar" in app.screen.status_text
+        assert not app.screen._downloading
+
+
+async def test_arrow_keys_switch_models_and_keep_list_focus(root, registry):
+    second = dict(registry["models"][MID], name="Second Model")
+    registry["models"]["second-model"] = second
+    setup_root(root, registry)
+    app = RecordingApp(root)
+    async with app.run_test(size=SIZE) as pilot:
+        app.screen.query_one(ListView).focus()
+        await pilot.press("down")
+        await pilot.pause()
+        assert app.screen.model_id == "second-model"
+        assert app.screen.focused is not None and app.screen.focused.id == "models"
+        await pilot.press("up")
+        await pilot.pause()
+        assert app.screen.model_id == MID

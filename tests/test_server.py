@@ -3,6 +3,7 @@ import socket
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 
@@ -153,3 +154,71 @@ def test_cleanup_kills_child_on_sigterm(tmp_path):
     p.terminate()
     p.wait(timeout=10)
     assert wait_for(lambda: not alive(pid), timeout=5)
+
+
+def test_port_already_in_use_fails_before_launching_anything(make):
+    sp, _, states, port = make()
+    with socket.socket() as squatter:
+        squatter.bind(("127.0.0.1", port))
+        squatter.listen()
+        sp.start()
+        assert sp.state == "failed" and sp.failure_reason == f"Port {port} is already in use"
+        assert sp.pid is None and states[-1] == "failed"
+
+
+def test_invalid_utf8_output_does_not_kill_the_reader(make):
+    sp, lines, *_ = make("badbytes")
+    sp.start()
+    assert wait_for(lambda: sp.state == "ready")
+    assert wait_for(lambda: "listening" in lines)
+
+
+def test_raising_line_callback_does_not_kill_the_reader():
+    port = free_port()
+    seen = []
+
+    def bad_line(line):
+        seen.append(line)
+        raise RuntimeError("UI went away")
+
+    sp = ServerProcess([sys.executable, FAKE, "--port", str(port)], "127.0.0.1", port, bad_line, lambda s: None)
+    try:
+        sp.start()
+        assert wait_for(lambda: "listening" in seen)
+    finally:
+        sp.stop(timeout=2)
+
+
+def test_exit_after_a_raising_callback_still_reports_failed():
+    port = free_port()
+
+    def bad_line(line):
+        raise RuntimeError("UI went away")
+
+    sp = ServerProcess([sys.executable, FAKE, "--port", str(port), "--mode", "exit1"], "127.0.0.1", port,
+                       bad_line, lambda s: None)
+    sp.start()
+    assert wait_for(lambda: sp.state == "failed")
+
+
+def test_stop_does_not_deadlock_when_state_lock_is_held_by_the_same_thread(make):
+    # A SIGTERM handler runs stop() on the main thread, possibly while it is inside _set_state.
+    sp, *_ = make()
+    sp.start()
+    assert wait_for(lambda: sp.state == "ready")
+    done = threading.Event()
+
+    def run():
+        with sp._lock:
+            sp.stop(timeout=2)
+        done.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    assert done.wait(5)
+
+
+def test_unlaunchable_binary_goes_failed_with_a_reason():
+    states = []
+    sp = ServerProcess(["/nonexistent/llama-server", "--port", "1"], "127.0.0.1", free_port(), lambda l: None, states.append)
+    sp.start()
+    assert sp.state == "failed" and "could not start" in sp.failure_reason.lower()

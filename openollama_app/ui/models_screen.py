@@ -225,6 +225,10 @@ class ModelsScreen(Screen):
             self.model_id = new
             self.settings = merge_defaults(self.model, self.app.state.get(new, {}))
             self.refresh(recompose=True)
+            self.call_after_refresh(self._focus_models)  # recompose rebuilds the list and drops focus
+
+    def _focus_models(self) -> None:
+        self.query_one("#models", ListView).focus()
 
     @on(ListView.Selected, "#models")
     def _model_selected(self, ev: ListView.Selected) -> None:
@@ -286,8 +290,8 @@ class ModelsScreen(Screen):
                 downloads.install_runtime(root, m["runtime"], rt, progress)
             if not model_path(root, m).exists():
                 downloads.fetch_model(root, m, progress)
-        except (downloads.DownloadError, downloads.UnsafeArchive, OSError) as e:
-            error = str(e)
+        except Exception as e:  # any failure must reach the status line, not kill the app
+            error = str(e) or type(e).__name__
         app.call_from_thread(self._download_finished, error)
 
     def _download_progress(self, done: int, total: int | None) -> None:

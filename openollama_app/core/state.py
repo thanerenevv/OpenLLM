@@ -20,8 +20,20 @@ def save_state(path: Path, state: dict) -> None:
     path.chmod(0o600)  # holds the API key
 
 
+def _int_in(value, lo: int, hi: int, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return n if lo <= n <= hi else default
+
+
 def merge_defaults(m: dict, saved: dict) -> dict:
     """A complete settings dict for model m: defaults, overlaid with whatever was saved, sanitised."""
+    if not isinstance(saved, dict):
+        saved = {}
     s = {"mode": "server", "kv": "q8_0", "ctx": 32768, "effort": m["reasoning_efforts"][-1],
          "expose": "local", "port": 8080, "max_tokens": 16384}
     s.update({k: v for k, v in saved.items() if k in s})
@@ -33,6 +45,8 @@ def merge_defaults(m: dict, saved: dict) -> dict:
         s["mode"] = "server"
     if s["expose"] not in ("local", "lan"):
         s["expose"] = "local"
+    s["port"] = _int_in(s["port"], 1, 65535, 8080)
+    s["max_tokens"] = _int_in(s["max_tokens"], 1, 10**9, 16384)
     try:
         s["ctx"] = clamp_ctx(int(s["ctx"]), m["max_ctx"])
     except (TypeError, ValueError):

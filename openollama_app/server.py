@@ -1,8 +1,9 @@
 """Owns the llama-server child process: output stream, readiness, failure reason, guaranteed cleanup."""
 import atexit
+import errno
 import os
-import re
 import signal
+import socket
 import subprocess
 import threading
 import time
@@ -20,7 +21,7 @@ class ServerProcess:
         self.argv, self.host, self.port = argv, host, port
         self._on_line, self._on_state = on_line, on_state
         self._state = "idle"
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # stop() may run inside a signal handler that interrupted _set_state
         self._tail: deque[str] = deque(maxlen=200)
         self._proc: subprocess.Popen | None = None
         self.failure_reason: str | None = None
@@ -44,25 +45,58 @@ class ServerProcess:
             if self._state == new:
                 return False
             self._state = new
-        self._on_state(new)
+        self._notify_state(new)
         return True
 
+    def _notify_state(self, state: str) -> None:
+        try:
+            self._on_state(state)
+        except Exception:
+            pass  # a broken listener must not take the server thread down with it
+
     # ---- lifecycle
+    def _port_in_use(self) -> bool:
+        host = self.argv[self.argv.index("--host") + 1] if "--host" in self.argv else "127.0.0.1"
+        with socket.socket() as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # ignore TIME_WAIT leftovers
+            try:
+                probe.bind((host, self.port))
+            except OSError as e:
+                return e.errno == errno.EADDRINUSE
+        return False
+
+    def _fail(self, reason: str) -> None:
+        self.failure_reason = reason
+        self._set_state("failed")
+
     def start(self) -> None:
         self._set_state("starting")
-        self._proc = subprocess.Popen(
-            self.argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-            start_new_session=True)  # own process group, so stop() reaches any helpers
+        if self._port_in_use():  # otherwise a foreign server's /health would look like ours
+            self._fail(f"Port {self.port} is already in use")
+            return
+        try:
+            self._proc = subprocess.Popen(
+                self.argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+                bufsize=1, start_new_session=True)  # own process group, so stop() reaches any helpers
+        except OSError as e:
+            self._fail(f"Could not start the server: {e}")
+            return
         self._reader = threading.Thread(target=self._read_output, daemon=True)
         self._reader.start()
         threading.Thread(target=self._poll_health, daemon=True).start()
 
     def _read_output(self) -> None:
         proc = self._proc
-        for line in proc.stdout:
-            line = line.rstrip("\n")
-            self._tail.append(line)
-            self._on_line(line)
+        try:
+            for line in proc.stdout:
+                line = line.rstrip("\n")
+                self._tail.append(line)
+                try:
+                    self._on_line(line)
+                except Exception:
+                    pass  # a broken listener must not stop us draining the pipe (the child would block on write)
+        except (OSError, ValueError):
+            pass
         code = proc.wait()
         if self._state in ("stopping", "stopped"):
             return
@@ -71,7 +105,7 @@ class ServerProcess:
 
     def _explain(self, code: int) -> str:
         text = "\n".join(self.last_lines(30)).lower()
-        if "address already in use" in text:
+        if "address already in use" in text or "couldn't bind" in text:
             return f"Port {self.port} is already in use"
         if "out of memory" in text or "failed to allocate" in text:
             return "Not enough memory for this context size"

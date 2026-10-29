@@ -1,5 +1,6 @@
 """Stdlib-only bootstrap: make sure Textual is importable, installing a local .venv with uv if needed."""
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,11 +14,15 @@ def venv_python(root: Path) -> Path:
     return root / ".venv" / "bin" / "python"
 
 
-def plan(root: Path, have_textual: bool, venv_exists: bool, have_uv: bool) -> str:
-    """What the entry point should do: run | reexec | install | manual."""
+def plan(root: Path, have_textual: bool, venv_exists: bool, have_uv: bool, in_venv: bool = False) -> str:
+    """What the entry point should do: run | reexec | install | manual.
+
+    in_venv: we are already running the venv's interpreter and still lack textual, so re-exec'ing
+    would loop forever; reinstall instead.
+    """
     if have_textual:
         return "run"
-    if venv_exists:
+    if venv_exists and not in_venv:
         return "reexec"
     return "install" if have_uv else "manual"
 
@@ -39,9 +44,13 @@ def install(root: Path) -> None:
     deps = RUNTIME_DEPS + (DEV_DEPS if os.environ.get("OPENOLLAMA_DEV") == "1" else [])
     py = str(venv_python(root))
     for extra in ([], ["--python", "3.13"]):
-        subprocess.check_call(["uv", "venv", str(root / ".venv"), "--clear", *extra])
+        try:
+            subprocess.check_call(["uv", "venv", str(root / ".venv"), "--clear", *extra])
+        except subprocess.CalledProcessError:
+            continue
         if subprocess.call(["uv", "pip", "install", "-p", py, *deps]) == 0:
             return
+    shutil.rmtree(root / ".venv", ignore_errors=True)  # a half-built venv would be re-exec'd into forever
     raise SystemExit("could not install UI dependencies with uv")
 
 
@@ -65,7 +74,8 @@ def reexec(root: Path, argv: list[str]) -> None:
 
 def ensure(root: Path, argv: list[str]) -> None:
     """Return when Textual is importable in this interpreter; otherwise install/re-exec/exit."""
-    action = plan(root, have_textual(), venv_python(root).exists(), shutil_which_uv())
+    in_venv = Path(sys.prefix).resolve() == (root / ".venv").resolve()
+    action = plan(root, have_textual(), venv_python(root).exists(), shutil_which_uv(), in_venv)
     if action == "run":
         return
     if action == "manual":

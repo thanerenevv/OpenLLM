@@ -71,8 +71,9 @@ def make_tar(path, members):
     [("top/", "dir", None), ("top/../evil", "file", b"x")],
     [("top/", "dir", None), ("/abs/evil", "file", b"x")],
     [("top/", "dir", None), ("top/link", "sym", "/etc/passwd")],
+    [("top/", "dir", None), ("top/sub/", "dir", None), ("top/sub/link", "sym", "../../outside")],
     [("top/", "dir", None), ("top/hard", "hard", "top/other")],
-], ids=["parent-traversal", "absolute", "symlink", "hardlink"])
+], ids=["parent-traversal", "absolute", "symlink-absolute", "symlink-escapes", "hardlink"])
 def test_safe_extract_rejects_unsafe_members(tmp_path, members):
     archive, dest = tmp_path / "a.tar.gz", tmp_path / "out"
     make_tar(archive, members)
@@ -116,3 +117,19 @@ def test_remote_size_reads_content_length(server):
 
 def test_remote_size_unreachable_is_none():
     assert downloads.remote_size("http://127.0.0.1:1/nope") is None
+
+
+def test_safe_extract_allows_relative_symlinks_inside_the_archive(tmp_path):
+    # The real llama.cpp runtime ships libggml.dylib -> libggml.0.dylib style links.
+    archive, dest = tmp_path / "a.tar.gz", tmp_path / "out"
+    make_tar(archive, [("top/", "dir", None), ("top/libx.0.21.0.dylib", "file", b"lib"),
+                       ("top/libx.0.dylib", "sym", "libx.0.21.0.dylib"), ("top/libx.dylib", "sym", "libx.0.dylib")])
+    downloads.safe_extract(archive, dest)
+    assert (dest / "libx.dylib").is_symlink() and (dest / "libx.dylib").read_bytes() == b"lib"
+
+
+def test_install_runtime_with_corrupt_archive_raises_download_error_and_removes_it(tmp_path, server):
+    rt = {"tag": "t", "url": f"{server}/f", "dir": "runtimes/x/{tag}"}
+    with pytest.raises(downloads.DownloadError):
+        downloads.install_runtime(tmp_path, "x", rt, lambda d, t: None)
+    assert not (tmp_path / ".dl" / "x-t.tar.gz").exists()

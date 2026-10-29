@@ -1,7 +1,9 @@
 """Resumable downloads (curl) with progress callbacks, and safe runtime-archive extraction."""
+import os
 import subprocess
 import tarfile
 import threading
+import zlib
 from pathlib import Path
 from typing import Callable
 
@@ -64,15 +66,26 @@ def download(url: str, dest: Path, on_progress: Progress) -> None:
 
 
 def safe_extract(archive: Path, dest_dir: Path) -> None:
-    """Extract a .tar.gz, dropping the first path component. Rejects absolute paths, '..', and links."""
+    """Extract a .tar.gz, dropping the first path component.
+
+    Rejects absolute paths, '..', hardlinks, and symlinks that are absolute or point outside the
+    extracted tree (the runtime ships relative links like libggml.dylib -> libggml.0.dylib).
+    """
     with tarfile.open(archive) as tf:
         members = tf.getmembers()
         for m in members:
             p = Path(m.name)
             if p.is_absolute() or ".." in p.parts:
                 raise UnsafeArchive(f"unsafe path in archive: {m.name}")
-            if m.issym() or m.islnk():
-                raise UnsafeArchive(f"link in archive not allowed: {m.name}")
+            if m.islnk():
+                raise UnsafeArchive(f"hardlink in archive not allowed: {m.name}")
+            if m.issym():
+                if Path(m.linkname).is_absolute():
+                    raise UnsafeArchive(f"absolute symlink in archive not allowed: {m.name}")
+                inside = Path(*p.parts[1:]).parent if len(p.parts) > 1 else Path(".")
+                target = os.path.normpath(inside / m.linkname)
+                if target == ".." or target.startswith("../"):
+                    raise UnsafeArchive(f"symlink escapes the archive: {m.name} -> {m.linkname}")
         dest_dir.mkdir(parents=True, exist_ok=True)
         for m in members:
             parts = Path(m.name).parts[1:]
@@ -86,7 +99,14 @@ def install_runtime(root: Path, rt_id: str, rt: dict, on_progress: Progress) -> 
     tmp.mkdir(exist_ok=True)
     archive = tmp / f"{rt_id}-{rt['tag']}.tar.gz"
     download(rt["url"].format(tag=rt["tag"]), archive, on_progress)
-    safe_extract(archive, runtime_dir(root, rt))
+    try:
+        safe_extract(archive, runtime_dir(root, rt))
+    except UnsafeArchive:
+        archive.unlink(missing_ok=True)
+        raise
+    except (tarfile.TarError, EOFError, zlib.error, OSError) as e:
+        archive.unlink(missing_ok=True)  # otherwise `-C -` would resume the same bad file forever
+        raise DownloadError(f"the downloaded runtime archive is corrupt or incomplete: {e}") from e
     archive.unlink()
 
 

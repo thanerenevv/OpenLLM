@@ -1,3 +1,5 @@
+import pytest
+
 from openollama_app.core import state
 
 
@@ -34,3 +36,20 @@ def test_merge_defaults_old_chat_entry(model):
 def test_merge_defaults_replaces_bad_values_and_clamps(model):
     s = state.merge_defaults(model, {"kv": "q2", "effort": "turbo", "ctx": 10**9})
     assert s["kv"] == "q8_0" and s["effort"] == "xhigh" and s["ctx"] == 262144
+
+
+@pytest.mark.parametrize("saved", [{"port": None}, {"port": "abc"}, {"port": 99999}, {"port": 0}, {"port": True},
+                                   {"max_tokens": "x"}, {"max_tokens": 0}, {"max_tokens": None}])
+def test_merge_defaults_sanitises_port_and_max_tokens(model, saved):
+    s = state.merge_defaults(model, saved)
+    assert s["port"] == 8080 and s["max_tokens"] == 16384
+
+
+@pytest.mark.parametrize("saved", [None, "oops", [1, 2], 7])
+def test_merge_defaults_tolerates_non_dict_entry(model, saved):
+    assert state.merge_defaults(model, saved)["mode"] == "server"
+
+
+def test_merge_defaults_keeps_valid_port_and_max_tokens(model):
+    s = state.merge_defaults(model, {"port": "9000", "max_tokens": 4096})
+    assert s["port"] == 9000 and s["max_tokens"] == 4096

@@ -10,6 +10,9 @@ ap.add_argument("--mode", default="ok")
 args, _ = ap.parse_known_args()  # tolerate the real llama.cpp flags
 
 print("fake server booting", flush=True)
+if args.mode == "badbytes":
+    sys.stdout.buffer.write(b"\xff\xfe not utf-8\n")
+    sys.stdout.buffer.flush()
 if args.mode == "exit1":
     print("something went wrong", flush=True)
     sys.exit(1)
