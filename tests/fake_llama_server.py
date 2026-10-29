@@ -7,7 +7,7 @@ import time
 ap = argparse.ArgumentParser()
 ap.add_argument("--port", type=int, required=True)
 ap.add_argument("--mode", default="ok")
-args = ap.parse_args()
+args, _ = ap.parse_known_args()  # tolerate the real llama.cpp flags
 
 print("fake server booting", flush=True)
 if args.mode == "exit1":

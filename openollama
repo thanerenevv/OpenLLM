@@ -2,6 +2,8 @@
 """openollama - pick a local model, tune it, run it (interactive terminal UI or headless).
 
 Stdlib only until the UI dependencies are needed; see openollama_app/bootstrap.py.
+  ./openollama          interactive dashboard
+  ./openollama --last   start the last-used model without any UI
 """
 import os
 import sys
@@ -11,25 +13,12 @@ ROOT = Path(os.path.realpath(__file__)).parent
 sys.path.insert(0, str(ROOT))
 
 from openollama_app import bootstrap  # noqa: E402
-
-
-def main():
-    bootstrap.ensure(ROOT, [str(ROOT / "openollama"), *sys.argv[1:]])
-    if "--last" in sys.argv:  # headless path moves into the app in a later task
-        from openollama_app import legacy
-        legacy.main()
-        return
-    from openollama_app.core.registry import RegistryError
-    from openollama_app.ui.app import OpenOllamaApp
-    try:
-        app = OpenOllamaApp(ROOT)
-    except RegistryError as e:
-        sys.exit(f"error: {e}")
-    app.run()
-
+from openollama_app.__main__ import main  # noqa: E402
 
 if __name__ == "__main__":
     try:
-        main()
+        if "--last" not in sys.argv:  # headless needs nothing beyond the stdlib
+            bootstrap.ensure(ROOT, [str(ROOT / "openollama"), *sys.argv[1:]])
+        sys.exit(main(sys.argv[1:], ROOT))
     except (KeyboardInterrupt, EOFError):
         print()
