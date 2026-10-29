@@ -1,0 +1,26 @@
+{
+  "runtimes": {
+    "prismml": {
+      "adapter": "llama.cpp",
+      "description": "PrismML llama.cpp fork (ternary/1-bit kernels, Metal)",
+      "tag": "prism-b10809-b3ebc47",
+      "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/{tag}/llama-{tag}-bin-macos-arm64.tar.gz",
+      "dir": "runtimes/prismml/{tag}"
+    }
+  },
+  "models": {
+    "ternary-bonsai-2-27b": {
+      "name": "Ternary Bonsai 2 27B",
+      "runtime": "prismml",
+      "repo": "prism-ml/Ternary-Bonsai-2-27B-gguf",
+      "file": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+      "size_gb": 5.95,
+      "max_ctx": 262144,
+      "sampling": {"temp": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.05},
+      "reasoning_efforts": ["medium", "xhigh"],
+      "weights_gib": 5.54,
+      "kv_mib_per_1k": {"f16": 64, "q8_0": 34, "q4_0": 18},
+      "notes": "Thinking model: keep max output tokens high (>=16384) or answers can come back empty."
+    }
+  }
+}

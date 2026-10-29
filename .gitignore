@@ -1,0 +1,10 @@
+.venv/
+.dl/
+models/
+runtimes/
+state.json
+__pycache__/
+.pytest_cache/
+.superpowers/
+.claude/
+.claude-flow/
