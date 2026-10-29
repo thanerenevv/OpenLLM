@@ -32,6 +32,7 @@ class RecordingApp(OpenOllamaApp):
 
     def on_models_screen_start_requested(self, msg):
         self.started.append(msg)
+        msg.prevent_default()  # don't let the real handler push a RunScreen
 
 
 @pytest.fixture(autouse=True)
