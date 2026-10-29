@@ -15,9 +15,17 @@ from openollama_app import bootstrap  # noqa: E402
 
 def main():
     bootstrap.ensure(ROOT, [str(ROOT / "openollama"), *sys.argv[1:]])
-    # TUI lands in a later task; until then run the original launcher.
-    from openollama_app import legacy
-    legacy.main()
+    if "--last" in sys.argv:  # headless path moves into the app in a later task
+        from openollama_app import legacy
+        legacy.main()
+        return
+    from openollama_app.core.registry import RegistryError
+    from openollama_app.ui.app import OpenOllamaApp
+    try:
+        app = OpenOllamaApp(ROOT)
+    except RegistryError as e:
+        sys.exit(f"error: {e}")
+    app.run()
 
 
 if __name__ == "__main__":

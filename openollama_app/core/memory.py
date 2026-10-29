@@ -27,7 +27,10 @@ def parse_tokens(text: str) -> int:
     """'48k' -> 49152, '49152' -> 49152, '1,024' -> 1024. Raises ValueError on anything else or <= 0."""
     t = text.strip().lower().replace(",", "")
     mult = 1024 if t.endswith("k") else 1
-    n = int(float(t.rstrip("k")) * mult)
+    try:
+        n = int(float(t.rstrip("k")) * mult)
+    except OverflowError as e:
+        raise ValueError(f"not a token count: {text!r}") from e
     if n <= 0:
         raise ValueError(f"token count must be positive: {text!r}")
     return n

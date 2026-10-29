@@ -16,7 +16,7 @@ def test_parse_tokens_ok(text, expected):
     assert memory.parse_tokens(text) == expected
 
 
-@pytest.mark.parametrize("text", ["abc", "0", "-5k", "", "k"])
+@pytest.mark.parametrize("text", ["abc", "0", "-5k", "", "k", "infk", "nan", "1e999"])
 def test_parse_tokens_rejects(text):
     with pytest.raises(ValueError):
         memory.parse_tokens(text)
