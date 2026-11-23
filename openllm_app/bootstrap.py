@@ -41,7 +41,7 @@ def install(root: Path) -> None:
 
     If the default interpreter can't install them, retry with Python 3.13.
     """
-    deps = RUNTIME_DEPS + (DEV_DEPS if os.environ.get("OPENOLLAMA_DEV") == "1" else [])
+    deps = RUNTIME_DEPS + (DEV_DEPS if os.environ.get("OPENLLM_DEV") == "1" else [])
     py = str(venv_python(root))
     for extra in ([], ["--python", "3.13"]):
         try:

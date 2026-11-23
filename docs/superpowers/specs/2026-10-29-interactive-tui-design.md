@@ -1,11 +1,11 @@
-# OpenOllama interactive TUI — design
+# OpenLLM interactive TUI — design
 
 Date: 2026-10-29
 Status: draft, awaiting review
 
 ## Goal
 
-Replace the numbered `input()` menus in `openollama` with a full-screen interactive
+Replace the numbered `input()` menus in `openllm` with a full-screen interactive
 terminal app (a dashboard that stays open while the model runs): pick a model, tune
 settings with live memory feedback, start/stop the server, chat with it, watch its log,
 and copy client connection snippets, all in one place.
@@ -14,7 +14,7 @@ and copy client connection snippets, all in one place.
 
 - **Scope:** full dashboard (setup, run, log, built-in chat), not just a nicer wizard.
 - **Library:** Textual, installed into a local `.venv` next to the script via `uv`.
-- **Structure:** a small package with a UI-free `core`, and a thin `openollama` entry point.
+- **Structure:** a small package with a UI-free `core`, and a thin `openllm` entry point.
 - **Data formats unchanged:** `models.json` and `state.json` keep their current shape, so the
   old settings and API key carry over.
 
@@ -27,8 +27,8 @@ and copy client connection snippets, all in one place.
 ## Layout
 
 ```
-openollama                      entry point: bootstrap venv, then start the app
-openollama_app/
+openllm                      entry point: bootstrap venv, then start the app
+openllm_app/
   core/
     registry.py                 load models.json, runtime paths
     state.py                    load/save state.json (0600, holds the API key)
@@ -115,14 +115,14 @@ LAN mode generates (or reuses) the `sk-…` key in `state.json`, as today.
 
 ## Bootstrap
 
-`openollama` is stdlib-only until it needs Textual:
+`openllm` is stdlib-only until it needs Textual:
 1. If `import textual` works in the current interpreter, run the app.
 2. Otherwise, if `.venv/` exists, re-exec with `.venv/bin/python`.
 3. Otherwise, ask once ("Install the UI dependencies into ./.venv with uv? [Y/n]"), run
    `uv venv .venv` and `uv pip install textual httpx`, then re-exec.
 If `uv` is missing, print the exact manual commands and exit.
 
-`openollama --last` runs headless: loads saved settings, starts the server via the same
+`openllm --last` runs headless: loads saved settings, starts the server via the same
 `core` code with no UI, prints the connection info, and stays in the foreground until Ctrl+C
 (same behaviour as the current script, minus `execv`).
 

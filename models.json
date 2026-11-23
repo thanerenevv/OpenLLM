@@ -5,13 +5,22 @@
       "description": "PrismML llama.cpp fork (ternary/1-bit kernels, Metal)",
       "tag": "prism-b10809-b3ebc47",
       "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/{tag}/llama-{tag}-bin-macos-arm64.tar.gz",
-      "dir": "runtimes/prismml/{tag}"
+      "dir": "runtimes/prismml/{tag}",
+      "ubatch": 256
+    },
+    "llamacpp": {
+      "adapter": "llama.cpp",
+      "description": "Upstream llama.cpp (Metal)",
+      "tag": "b12000",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-macos-arm64.tar.gz",
+      "dir": "runtimes/llamacpp/{tag}"
     }
   },
   "models": {
     "ternary-bonsai-2-27b": {
       "name": "Ternary Bonsai 2 27B",
       "runtime": "prismml",
+      "runtimes": ["prismml"],
       "repo": "prism-ml/Ternary-Bonsai-2-27B-gguf",
       "file": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
       "size_gb": 5.95,
@@ -21,6 +30,74 @@
       "weights_gib": 5.54,
       "kv_mib_per_1k": {"f16": 64, "q8_0": 34, "q4_0": 18},
       "notes": "Thinking model: keep max output tokens high (>=16384) or answers can come back empty."
+    },
+    "ternary-bonsai-2-27b-abliterated": {
+      "name": "Ternary Bonsai 2 27B Abliterated",
+      "runtime": "prismml",
+      "runtimes": ["prismml"],
+      "repo": "BoldingBuilds/Ternary-Bonsai-2-27B-Abliterated-PTQ1_0-GGUF",
+      "file": "Ternary-Bonsai-2-27B-Abliterated-PTQ1_0.gguf",
+      "size_gb": 5.95,
+      "max_ctx": 262144,
+      "sampling": {"temp": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.05},
+      "reasoning_efforts": ["medium", "xhigh"],
+      "weights_gib": 5.54,
+      "kv_mib_per_1k": {"f16": 64, "q8_0": 34, "q4_0": 18},
+      "notes": "Refusal-ablated build. Thinking mode is flaky on this v1 build (often no final answer on harmful prompts): keep max output tokens high (>=16384)."
+    },
+    "ternary-bonsai-2-27b-heretic-v2": {
+      "name": "Ternary Bonsai 2 27B Uncensored Heretic v2",
+      "runtime": "prismml",
+      "runtimes": ["prismml"],
+      "repo": "OS-Software/Ternary-Bonsai-2-27B-Uncensored-Heretic-v2-GGUF",
+      "file": "Ternary-Bonsai-2-27B-Uncensored-Heretic-v2-PTQ1_0.gguf",
+      "size_gb": 5.95,
+      "max_ctx": 262144,
+      "sampling": {"temp": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.05},
+      "reasoning_efforts": ["medium", "xhigh"],
+      "weights_gib": 5.54,
+      "kv_mib_per_1k": {"f16": 64, "q8_0": 34, "q4_0": 18},
+      "notes": "Decensored (OT-Ridge LoRA baked in). Thinking finishes far more often than v1 but ~9% of long answers can still run out of tokens: keep max output tokens high (>=16384). If it loops, try --repeat-penalty 1.1."
+    },
+    "dolphin3-cyber-8b-q6": {
+      "name": "Dolphin3 Cyber 8B Q6_K",
+      "runtime": "prismml",
+      "repo": "RavichandranJ/Dolphin3-Cyber-8B-GGUF",
+      "file": "Dolphin3.0-Llama3.1-8B-abliterated.Q6_K.gguf",
+      "size_gb": 6.60,
+      "max_ctx": 131072,
+      "sampling": {"temp": 0.7, "top_p": 0.9, "top_k": 40, "min_p": 0.05},
+      "reasoning_efforts": ["off"],
+      "weights_gib": 6.14,
+      "kv_mib_per_1k": {"f16": 128, "q8_0": 68, "q4_0": 36},
+      "notes": "Non-thinking Llama 3.1 8B (cybersecurity fine-tune, abliterated). Fine-tuned at 2048 ctx, so quality may drop on very long inputs. Card suggests --repeat-penalty 1.1 if it loops."
+    },
+    "dolphin3-cyber-8b-q8": {
+      "name": "Dolphin3 Cyber 8B Q8_0",
+      "runtime": "prismml",
+      "repo": "RavichandranJ/Dolphin3-Cyber-8B-GGUF",
+      "file": "Dolphin3.0-Llama3.1-8B-abliterated.Q8_0.gguf",
+      "size_gb": 8.54,
+      "max_ctx": 131072,
+      "sampling": {"temp": 0.7, "top_p": 0.9, "top_k": 40, "min_p": 0.05},
+      "reasoning_efforts": ["off"],
+      "weights_gib": 7.95,
+      "kv_mib_per_1k": {"f16": 128, "q8_0": 68, "q4_0": 36},
+      "notes": "Non-thinking Llama 3.1 8B (cybersecurity fine-tune, abliterated). Fine-tuned at 2048 ctx, so quality may drop on very long inputs. Card suggests --repeat-penalty 1.1 if it loops."
+    },
+    "underdog-saluki-27b": {
+      "name": "Underdog Saluki 27B 1.0",
+      "runtime": "llamacpp",
+      "runtimes": ["llamacpp"],
+      "repo": "ConwayResearch/Underdog-Saluki-27B-1.0",
+      "file": "Underdog-Saluki-27B-1.0-IQ2-mix.gguf",
+      "size_gb": 7.90,
+      "max_ctx": 262144,
+      "sampling": {"temp": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0},
+      "reasoning_efforts": ["off", "on"],
+      "weights_gib": 7.36,
+      "kv_mib_per_1k": {"f16": 64, "q8_0": 34, "q4_0": 18},
+      "notes": "Qwen3.8-27B compressed to 2-bit for tool calling; stock llama.cpp GGUF. Thinking is on by default and can run long: keep max output tokens high (>=16384). Vision add-on (mmproj) is not wired up."
     }
   }
 }

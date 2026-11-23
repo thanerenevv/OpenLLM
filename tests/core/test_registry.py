@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from openollama_app.core import registry as reg
+from openllm_app.core import registry as reg
 
 
 def test_load_registry_reads_file(tmp_path, registry):
@@ -27,3 +27,23 @@ def test_runtime_paths(root, runtime, model):
     assert reg.runtime_dir(root, runtime) == root / "runtimes/prismml/prism-test"
     assert reg.runtime_bin(root, runtime, "llama-server") == root / "runtimes/prismml/prism-test/llama-server"
     assert reg.model_path(root, model) == root / "models/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+
+
+def _load(tmp_path, registry):
+    p = tmp_path / "models.json"
+    p.write_text(json.dumps(registry))
+    return reg.load_registry(p)["models"]["ternary-bonsai-2-27b"]
+
+
+def test_model_without_runtimes_allows_every_runtime(tmp_path, registry):
+    del registry["models"]["ternary-bonsai-2-27b"]["runtimes"]
+    assert _load(tmp_path, registry)["runtimes"] == ["prismml", "llamacpp"]
+
+
+def test_explicit_runtimes_are_kept(tmp_path, registry):
+    assert _load(tmp_path, registry)["runtimes"] == ["prismml"]
+
+
+def test_unknown_runtimes_are_dropped_and_the_default_is_always_allowed(tmp_path, registry):
+    registry["models"]["ternary-bonsai-2-27b"]["runtimes"] = ["nonesuch", "llamacpp"]
+    assert _load(tmp_path, registry)["runtimes"] == ["prismml", "llamacpp"]

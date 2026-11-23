@@ -20,16 +20,16 @@ def run_last(root: Path, reg: dict) -> int:
     state = load_state(state_path)
     saved = [mid for mid in state if mid in reg["models"]]
     if not saved:
-        err("no saved settings yet - run ./openollama once and start a model")
+        err("no saved settings yet - run ./openllm once and start a model")
         return 1
     model_id = saved[0]  # state.json keeps insertion order; with several models this is the earliest saved
     m = reg["models"][model_id]
-    rt = reg["runtimes"][m["runtime"]]
+    s = merge_defaults(m, state[model_id])
+    rt = reg["runtimes"][s["runtime"]]
     if not runtime_bin(root, rt, "llama-server").exists() or not model_path(root, m).exists():
-        err("the runtime or model is not downloaded - run ./openollama and press d to download")
+        err("the runtime or model is not downloaded - run ./openllm and press d to download")
         return 1
 
-    s = merge_defaults(m, state[model_id])
     s["model_id"], s["model_name"] = model_id, m["name"]
     api_key = None
     if s["mode"] == "server" and s["expose"] == "lan":
@@ -91,8 +91,8 @@ def main(argv: list[str], root: Path | None = None) -> int:
         return 1
     if "--last" in argv:
         return run_last(root, reg)
-    from .ui.app import OpenOllamaApp  # imported late: needs the UI dependencies
-    OpenOllamaApp(root).run()
+    from .ui.app import OpenLLMApp  # imported late: needs the UI dependencies
+    OpenLLMApp(root).run()
     return 0
 
 

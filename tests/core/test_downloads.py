@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from openollama_app.core import downloads
+from openllm_app.core import downloads
 
 PAYLOAD = bytes(range(256)) * 8192  # 2 MiB
 

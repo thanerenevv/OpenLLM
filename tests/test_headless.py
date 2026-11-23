@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from openollama_app import __main__ as entry
-from openollama_app.core import state as state_mod
+from openllm_app import __main__ as entry
+from openllm_app.core import state as state_mod
 
 MID = "ternary-bonsai-2-27b"
 FAKE_SRC = (Path(__file__).parent / "fake_llama_server.py").read_text()
@@ -79,7 +79,7 @@ def test_last_server_failure_exits_1_with_reason(root, registry, capsys):
 def test_last_starts_server_prints_base_url_and_stops_on_sigint(root, registry):
     port = free_port()
     make_root(root, registry, saved={MID: saved_settings(port=port)})
-    code = ("import sys; from pathlib import Path; from openollama_app.__main__ import main; "
+    code = ("import sys; from pathlib import Path; from openllm_app.__main__ import main; "
             "sys.exit(main(['--last'], Path(sys.argv[1])))")
     p = subprocess.Popen([sys.executable, "-c", code, str(root)], stdout=subprocess.PIPE, text=True,
                          cwd=Path(__file__).parent.parent)
@@ -103,3 +103,28 @@ def test_last_lan_reuses_saved_api_key(root, registry, capsys):
               mode="exit1")
     entry.main(["--last"], root)
     assert state_mod.load_state(root / "state.json")["api_key"] == "sk-keep"
+
+
+def test_last_uses_the_saved_runtime(root, registry, monkeypatch):
+    registry["models"]["generic-8b"] = {**registry["models"][MID], "file": "generic-Q4_K_M.gguf",
+                                         "runtimes": ["prismml", "llamacpp"], "reasoning_efforts": ["off"]}
+    make_root(root, registry, saved={"generic-8b": saved_settings(mode="chat", runtime="llamacpp", effort="off")})
+    (root / "models" / "generic-Q4_K_M.gguf").touch()
+    d = root / "runtimes/llamacpp/b-test"
+    d.mkdir(parents=True)
+    for name in ("llama-server", "llama-cli"):
+        (d / name).write_text("#!/bin/sh\n")
+        (d / name).chmod(0o755)
+    calls = []
+    monkeypatch.setattr(os, "execv", lambda path, argv: calls.append(path))
+    entry.main(["--last"], root)
+    assert calls and "/runtimes/llamacpp/b-test/" in calls[0]
+
+
+def test_last_with_saved_runtime_not_installed_says_to_download(root, registry, capsys):
+    registry["models"]["generic-8b"] = {**registry["models"][MID], "file": "generic-Q4_K_M.gguf",
+                                         "runtimes": ["prismml", "llamacpp"], "reasoning_efforts": ["off"]}
+    make_root(root, registry, saved={"generic-8b": saved_settings(runtime="llamacpp", effort="off")})
+    (root / "models" / "generic-Q4_K_M.gguf").touch()
+    assert entry.main(["--last"], root) == 1
+    assert "download" in capsys.readouterr().err.lower()

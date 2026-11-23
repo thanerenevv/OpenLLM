@@ -1,12 +1,13 @@
 import json
 
 import pytest
-from textual.widgets import Button, Input, ListView, RadioButton
+from textual.widgets import Button, Input, ListView
 
-from openollama_app.core import downloads, memory, state as state_mod
-from openollama_app.ui.app import OpenOllamaApp
-from openollama_app.ui.models_screen import ModelsScreen
-from openollama_app.ui.widgets import MemoryGauge
+from openllm_app.core import downloads, memory, state as state_mod
+from openllm_app.ui.app import OpenLLMApp
+from openllm_app.ui.model_screen import ModelScreen
+from openllm_app.ui.models_screen import ModelsScreen
+from openllm_app.ui.widgets import Cycler, MemoryGauge
 
 MID = "ternary-bonsai-2-27b"
 SIZE = (120, 40)
@@ -25,14 +26,24 @@ def setup_root(root, registry, installed=True, saved=None):
         state_mod.save_state(root / "state.json", saved)
 
 
-class RecordingApp(OpenOllamaApp):
+class RecordingApp(OpenLLMApp):
     def __init__(self, root):
         super().__init__(root)
         self.started = []
 
-    def on_models_screen_start_requested(self, msg):
+    def on_model_screen_start_requested(self, msg):
         self.started.append(msg)
         msg.prevent_default()  # don't let the real handler push a RunScreen
+
+
+async def open_model(app, pilot, model_id=None):
+    """From the list screen into one model's screen (the first model by default)."""
+    if model_id:
+        app.screen.query_one("#models", ListView).index = list(app.registry["models"]).index(model_id)
+        await pilot.pause()
+    await pilot.press("enter")
+    await pilot.pause()
+    assert isinstance(app.screen, ModelScreen)
 
 
 @pytest.fixture(autouse=True)
@@ -44,8 +55,9 @@ async def test_gauge_updates_when_kv_changes(root, registry, model):
     setup_root(root, registry)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         screen = app.screen
-        screen.query_one("#kv-q4_0", RadioButton).value = True
+        screen.query_one("#kv", Cycler).select("q4_0")
         await pilot.pause()
         gauge = screen.query_one(MemoryGauge)
         assert gauge.used == pytest.approx(memory.estimate_gb(model, 32768, "q4_0"))
@@ -56,8 +68,9 @@ async def test_gauge_red_when_over_budget(root, registry, monkeypatch):
     monkeypatch.setattr(memory, "total_ram_gb", lambda: 8.0)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
-        await pilot.click("#ctx-up")
-        await pilot.click("#ctx-up")
+        await open_model(app, pilot)
+        app.screen.query_one("#ctx", Cycler).action_step(1)
+        app.screen.query_one("#ctx", Cycler).action_step(1)
         await pilot.pause()
         gauge = app.screen.query_one(MemoryGauge)
         assert gauge.has_class("over")
@@ -66,7 +79,8 @@ async def test_gauge_red_when_over_budget(root, registry, monkeypatch):
 async def test_gauge_not_red_when_it_fits(root, registry):
     setup_root(root, registry)
     app = RecordingApp(root)
-    async with app.run_test(size=SIZE):
+    async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         assert not app.screen.query_one(MemoryGauge).has_class("over")
 
 
@@ -74,13 +88,17 @@ async def test_context_stepper_moves_through_presets(root, registry):
     setup_root(root, registry)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
-        await pilot.click("#ctx-up")
+        await open_model(app, pilot)
+        ctx = app.screen.query_one("#ctx", Cycler)
+        ctx.action_step(1)
+        await pilot.pause()
         assert app.screen.settings["ctx"] == 65536
-        await pilot.pause(0.4)  # Button ignores a second press while its "active" flash is running
-        await pilot.click("#ctx-down")
-        await pilot.pause(0.4)
-        await pilot.click("#ctx-down")
+        ctx.action_step(-1)
+        ctx.action_step(-1)
+        await pilot.pause()
         assert app.screen.settings["ctx"] == 16384
+        await pilot.press("right")  # keys work too: the focused selector moves
+        await pilot.pause()
 
 
 @pytest.mark.parametrize("text", ["abc", "0", "-5k", "infk"])
@@ -88,6 +106,7 @@ async def test_custom_context_garbage_is_rejected(root, registry, text):
     setup_root(root, registry)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         app.screen.query_one("#ctx-custom", Input).focus()
         await pilot.press(*text, "enter")
         await pilot.pause()
@@ -99,6 +118,7 @@ async def test_custom_context_huge_is_clamped_and_valid_is_accepted(root, regist
     setup_root(root, registry)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         box = app.screen.query_one("#ctx-custom", Input)
         box.focus()
         await pilot.press(*"9999999k", "enter")
@@ -109,23 +129,23 @@ async def test_custom_context_huge_is_clamped_and_valid_is_accepted(root, regist
         assert not app.screen.status_is_error
 
 
-async def test_last_settings_old_chat_entry_fills_defaults(root, registry):
+async def test_old_chat_entry_fills_defaults(root, registry):
     old = {"mode": "chat", "kv": "q8_0", "ctx": 32768, "effort": "xhigh", "max_tokens": 16384}
     setup_root(root, registry, saved={MID: old})
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
-        app.screen.query_one("#mode-server", RadioButton).value = True
-        await pilot.pause()
-        await pilot.press("l")
-        await pilot.pause()
+        await open_model(app, pilot)
         s = app.screen.settings
         assert s["mode"] == "chat" and s["port"] == 8080 and s["expose"] == "local"
+        assert app.screen.query_one("#mode", Cycler).value == "chat"
+        assert not app.screen.query_one("#port-row").display  # server-only options hide in chat mode
 
 
 async def test_not_downloaded_model_blocks_start_and_offers_download(root, registry):
     setup_root(root, registry, installed=False)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         await pilot.click("#start")
         await pilot.pause()
         assert app.started == []
@@ -152,6 +172,7 @@ async def test_download_key_fetches_runtime_and_model(root, registry, monkeypatc
     monkeypatch.setattr(downloads, "fetch_model", fake_model)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         await pilot.press("d")
         await app.workers.wait_for_complete()
         await pilot.pause()
@@ -170,6 +191,7 @@ async def test_download_failure_is_reported_not_raised(root, registry, monkeypat
     monkeypatch.setattr(downloads, "install_runtime", boom)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         await pilot.press("d")
         await app.workers.wait_for_complete()
         await pilot.pause()
@@ -180,7 +202,8 @@ async def test_start_posts_message_and_saves_state(root, registry):
     setup_root(root, registry)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
-        app.screen.query_one("#kv-q4_0", RadioButton).value = True
+        await open_model(app, pilot)
+        app.screen.query_one("#kv", Cycler).select("q4_0")
         await pilot.pause()
         await pilot.click("#start")
         await pilot.pause()
@@ -197,27 +220,54 @@ async def test_lan_start_generates_and_reuses_api_key(root, registry):
     setup_root(root, registry, saved={"api_key": "sk-existing"})
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
-        app.screen.query_one("#expose-lan", RadioButton).value = True
+        await open_model(app, pilot)
+        app.screen.query_one("#expose", Cycler).select("lan")
         await pilot.pause()
         await pilot.click("#start")
         await pilot.pause()
         assert app.started[0].api_key == "sk-existing"
 
 
-async def test_enter_on_model_list_starts(root, registry):
+async def test_enter_on_list_opens_the_model_and_enter_there_starts(root, registry):
     setup_root(root, registry)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
         app.screen.query_one(ListView).focus()
         await pilot.press("enter")
         await pilot.pause()
+        assert isinstance(app.screen, ModelScreen) and app.started == []
+        await pilot.press("enter")
+        await pilot.pause()
         assert len(app.started) == 1
+
+
+async def test_escape_goes_back_to_the_list(root, registry):
+    setup_root(root, registry)
+    app = RecordingApp(root)
+    async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ModelsScreen)
+
+
+async def test_mode_selector_toggles_server_options(root, registry):
+    setup_root(root, registry)
+    app = RecordingApp(root)
+    async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
+        assert app.screen.query_one("#port-row").display and app.screen.query_one("#expose").display
+        app.screen.query_one("#mode", Cycler).select("chat")
+        await pilot.pause()
+        assert not app.screen.query_one("#port-row").display and not app.screen.query_one("#expose").display
+        assert app.screen.settings["mode"] == "chat"
 
 
 async def test_invalid_port_blocks_start(root, registry):
     setup_root(root, registry)
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         box = app.screen.query_one("#port", Input)
         box.value = "99999"
         await pilot.pause()
@@ -232,6 +282,7 @@ async def test_download_unexpected_error_is_reported_not_fatal(root, registry, m
     monkeypatch.setattr(downloads, "install_runtime", lambda *a, **k: (_ for _ in ()).throw(tarfile.ReadError("not a tar")))
     app = RecordingApp(root)
     async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         await pilot.press("d")
         await app.workers.wait_for_complete()
         await pilot.pause()

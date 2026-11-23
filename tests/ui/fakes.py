@@ -1,7 +1,7 @@
 """Fakes injected into RunScreen: a scriptable server and a scriptable chat stream."""
 import asyncio
 
-from openollama_app.client import ChatEvent
+from openllm_app.client import ChatEvent
 
 
 class FakeServer:

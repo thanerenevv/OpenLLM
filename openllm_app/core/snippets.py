@@ -23,13 +23,13 @@ def client_snippets(s: dict, api_key: str | None) -> dict[str, str]:
     ctx, mid = s["ctx"], s["model_id"]
     oc = {
         "$schema": "https://opencode.ai/config.json",
-        "provider": {"openollama": {
+        "provider": {"openllm": {
             "npm": "@ai-sdk/openai-compatible",
-            "name": "OpenOllama",
+            "name": "OpenLLM",
             "options": {"baseURL": base, "apiKey": key},
             "models": {mid: {"name": s["model_name"], "limit": {"context": ctx, "output": min(16384, ctx // 2)}}},
         }},
-        "model": f"openollama/{mid}",
+        "model": f"openllm/{mid}",
     }
     body = json.dumps({"model": mid, "max_tokens": 16384, "messages": [{"role": "user", "content": "hi"}]})
     return {

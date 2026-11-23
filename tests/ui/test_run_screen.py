@@ -3,14 +3,14 @@ import asyncio
 import pytest
 from textual.widgets import Input, TabbedContent
 
-from openollama_app.core import memory
-from openollama_app.ui.app import OpenOllamaApp
-from openollama_app.ui.models_screen import ModelsScreen
-from openollama_app.ui.run_screen import ConfirmStop, RunScreen
-from openollama_app.ui.widgets import ChatPane, LogPane, ThinkingBlock
+from openllm_app.core import memory
+from openllm_app.ui.app import OpenLLMApp
+from openllm_app.ui.model_screen import ModelScreen
+from openllm_app.ui.run_screen import ConfirmStop, RunScreen
+from openllm_app.ui.widgets import ChatPane, LogPane, ThinkingBlock
 
 from .fakes import Factory, ev, scripted_chat
-from .test_models_screen import MID, SIZE, setup_root
+from .test_models_screen import MID, SIZE, open_model, setup_root
 
 FINISH = ev("done", finish_reason="stop", empty_answer=False)
 
@@ -23,8 +23,9 @@ def big_mac(monkeypatch):
 async def launch(root, registry, pilot_fn, chat=None, saved=None):
     setup_root(root, registry, saved=saved)
     factory = Factory()
-    app = OpenOllamaApp(root, run_kwargs={"server_factory": factory, "chat_fn": chat or scripted_chat([FINISH])})
+    app = OpenLLMApp(root, run_kwargs={"server_factory": factory, "chat_fn": chat or scripted_chat([FINISH])})
     async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
         await pilot.click("#start")
         await pilot.pause()
         assert isinstance(app.screen, RunScreen)
@@ -154,7 +155,7 @@ async def test_failed_start_shows_reason_and_back_action(root, registry):
         assert "address already in use" in app.screen.fail_text
         await pilot.click("#back")
         await pilot.pause()
-        assert isinstance(app.screen, ModelsScreen)
+        assert isinstance(app.screen, ModelScreen)
     await launch(root, registry, run)
 
 
@@ -194,7 +195,7 @@ async def test_stop_key_confirms_when_generating(root, registry):
         await pilot.press("y")
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert server.stopped and isinstance(app.screen, ModelsScreen)
+        assert server.stopped and isinstance(app.screen, ModelScreen)
     await launch(root, registry, run, chat=chat)
 
 
@@ -205,7 +206,7 @@ async def test_stop_when_idle_goes_back_without_confirmation(root, registry):
         await pilot.press("escape")
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert server.stopped and isinstance(app.screen, ModelsScreen)
+        assert server.stopped and isinstance(app.screen, ModelScreen)
     await launch(root, registry, run)
 
 
@@ -243,7 +244,7 @@ async def test_connect_tab_shows_snippets_and_copy(root, registry, monkeypatch):
 
 
 async def test_connect_tab_lan_shows_generated_key(root, registry, monkeypatch):
-    from openollama_app.core import snippets
+    from openllm_app.core import snippets
     monkeypatch.setattr(snippets, "lan_ip", lambda: "192.168.1.9")
 
     async def run(app, pilot, server):

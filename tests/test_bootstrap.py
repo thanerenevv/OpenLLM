@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from openollama_app import bootstrap
+from openllm_app import bootstrap
 
 ROOT = Path("/x")
 

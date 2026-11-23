@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from openollama_app.client import stream_chat
+from openllm_app.client import stream_chat
 
 MSGS = [{"role": "user", "content": "hi"}]
 

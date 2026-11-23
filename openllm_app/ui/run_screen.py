@@ -12,7 +12,7 @@ from textual.widgets import Button, Footer, Input, Static, TabbedContent, TabPan
 from .. import client
 from ..core import cmdline, snippets
 from ..server import ServerProcess, install_cleanup
-from .models_screen import memory_human
+from .model_screen import memory_human
 from .widgets import ChatPane, LogPane, SnippetBox
 
 STATUS_WORDS = {"idle": "starting", "starting": "loading model…", "ready": "ready",
@@ -151,7 +151,7 @@ class RunScreen(Screen):
         s = {**self.settings, "mode": "server", "model_id": self.model_id, "port": self.port}
         if self.settings.get("mode") == "chat":
             s["expose"] = "local"
-        rt = self.app.registry["runtimes"][self.model["runtime"]]
+        rt = self.app.registry["runtimes"][self.settings.get("runtime", self.model["runtime"])]
         key = self.api_key if s.get("expose") == "lan" else None
         argv = cmdline.build_command(self.app.root, rt, self.model, s, key)
         real = self._server_factory is None

@@ -8,3 +8,6 @@ __pycache__/
 .superpowers/
 .claude/
 .claude-flow/
+user_models.json
+model_overrides.json
+.DS_Store

@@ -1,10 +1,10 @@
-# OpenOllama Interactive TUI Implementation Plan
+# OpenLLM Interactive TUI Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the numbered-menu launcher with a full-screen Textual dashboard (model picker, live memory gauge, server control, chat, log, client snippets).
 
-**Architecture:** The logic in the current `openollama` script moves into a UI-free `openollama_app/core` package. A `ServerProcess` (child process, not `execv`) and a streaming `client` sit on top of it, and two Textual screens (Models, Run) sit on top of those. `openollama` becomes a stdlib-only entry point that bootstraps a local `.venv` with `uv` and starts the app.
+**Architecture:** The logic in the current `openllm` script moves into a UI-free `openllm_app/core` package. A `ServerProcess` (child process, not `execv`) and a streaming `client` sit on top of it, and two Textual screens (Models, Run) sit on top of those. `openllm` becomes a stdlib-only entry point that bootstraps a local `.venv` with `uv` and starts the app.
 
 **Tech Stack:** Python 3, Textual, httpx, pytest + pytest-asyncio, uv, curl, llama.cpp (PrismML fork) `llama-server`.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Textual and httpx are installed only into `./.venv` next to the script via `uv`; `openollama` itself uses only the stdlib until it re-execs into the venv.
+- Textual and httpx are installed only into `./.venv` next to the script via `uv`; `openllm` itself uses only the stdlib until it re-execs into the venv.
 - `models.json` and `state.json` keep their current formats; existing `state.json` content (including `api_key`) must keep working.
 - `state.json` is written with mode `0600`.
 - `core` imports nothing from `ui`, `server` or `client`.
@@ -36,23 +36,23 @@
 ### Task 1: Scaffold, git, venv bootstrap
 
 **Files:**
-- Create: `openollama_app/__init__.py`, `openollama_app/bootstrap.py`, `tests/test_bootstrap.py`, `pyproject.toml` (pytest config only: `asyncio_mode = "auto"`, `testpaths = ["tests"]`), `.gitignore` (`.venv/`, `.dl/`, `models/`, `runtimes/`, `state.json`, `__pycache__/`)
-- Modify: `openollama` (becomes the thin entry point; the old logic stays in `openollama.legacy` until Task 8 so the tool keeps working)
+- Create: `openllm_app/__init__.py`, `openllm_app/bootstrap.py`, `tests/test_bootstrap.py`, `pyproject.toml` (pytest config only: `asyncio_mode = "auto"`, `testpaths = ["tests"]`), `.gitignore` (`.venv/`, `.dl/`, `models/`, `runtimes/`, `state.json`, `__pycache__/`)
+- Modify: `openllm` (becomes the thin entry point; the old logic stays in `openllm.legacy` until Task 8 so the tool keeps working)
 
 **Interfaces:**
-- Produces: `bootstrap.venv_python(root: Path) -> Path` (`root/.venv/bin/python`); `bootstrap.plan(root: Path, have_textual: bool, venv_exists: bool, have_uv: bool) -> Literal["run", "reexec", "install", "manual"]`; `bootstrap.install(root: Path) -> None` (runs `uv venv .venv`, then `uv pip install -p .venv/bin/python textual httpx`; on failure retries with `--python 3.13`; adds dev deps `pytest pytest-asyncio` only when `OPENOLLAMA_DEV=1`).
+- Produces: `bootstrap.venv_python(root: Path) -> Path` (`root/.venv/bin/python`); `bootstrap.plan(root: Path, have_textual: bool, venv_exists: bool, have_uv: bool) -> Literal["run", "reexec", "install", "manual"]`; `bootstrap.install(root: Path) -> None` (runs `uv venv .venv`, then `uv pip install -p .venv/bin/python textual httpx`; on failure retries with `--python 3.13`; adds dev deps `pytest pytest-asyncio` only when `OPENLLM_DEV=1`).
 
 - [ ] **Step 1: Write failing tests** in `tests/test_bootstrap.py`: `test_plan_runs_when_textual_importable` (`plan(r, True, False, False) == "run"`), `test_plan_reexecs_into_existing_venv` (`plan(r, False, True, True) == "reexec"`), `test_plan_installs_when_uv_present` (`plan(r, False, False, True) == "install"`), `test_plan_manual_when_no_uv` (`plan(r, False, False, False) == "manual"`).
 - [ ] **Step 2:** `git init`; run `python3 -m pytest tests/test_bootstrap.py -v` (system pytest or `uvx pytest`); expect FAIL (module missing).
 - [ ] **Step 3:** Implement `bootstrap.py` per the Interfaces block. The "manual" case prints the exact `uv venv` / `uv pip install` commands.
-- [ ] **Step 4:** Make `openollama` call `bootstrap.plan(...)` and act: `run` → import and start the app (a placeholder `main()` that prints "TUI not built yet" and falls back to `openollama.legacy.main()` for now), `reexec` → `os.execv(venv_python, [venv_python, __file__, *argv])`, `install` → prompt "Install the UI dependencies into ./.venv with uv? [Y/n]" then `install` and re-exec.
-- [ ] **Step 5: Verify Python compatibility (spec risk).** Run `OPENOLLAMA_DEV=1 ./openollama`, then `.venv/bin/python -c "import textual, httpx; print(textual.__version__)"`. Expected: prints a version. If install fails on the default interpreter and the `--python 3.13` retry succeeds, keep the retry; record which interpreter worked in a one-line comment in `bootstrap.py`.
+- [ ] **Step 4:** Make `openllm` call `bootstrap.plan(...)` and act: `run` → import and start the app (a placeholder `main()` that prints "TUI not built yet" and falls back to `openllm.legacy.main()` for now), `reexec` → `os.execv(venv_python, [venv_python, __file__, *argv])`, `install` → prompt "Install the UI dependencies into ./.venv with uv? [Y/n]" then `install` and re-exec.
+- [ ] **Step 5: Verify Python compatibility (spec risk).** Run `OPENLLM_DEV=1 ./openllm`, then `.venv/bin/python -c "import textual, httpx; print(textual.__version__)"`. Expected: prints a version. If install fails on the default interpreter and the `--python 3.13` retry succeeds, keep the retry; record which interpreter worked in a one-line comment in `bootstrap.py`.
 - [ ] **Step 6:** Run `.venv/bin/python -m pytest tests/test_bootstrap.py -v`. Expected: PASS. Commit: `git add -A && git commit -m "feat: scaffold package and uv venv bootstrap"`.
 
 ### Task 2: Core (registry, state, memory, cmdline, snippets)
 
 **Files:**
-- Create: `openollama_app/core/{__init__,registry,state,memory,cmdline,snippets}.py`, `tests/core/test_{registry,state,memory,cmdline,snippets}.py`
+- Create: `openllm_app/core/{__init__,registry,state,memory,cmdline,snippets}.py`, `tests/core/test_{registry,state,memory,cmdline,snippets}.py`
 
 **Interfaces:**
 - Produces:
@@ -64,14 +64,14 @@
 
 - [ ] **Step 1: Write failing tests** (port the behaviour from the current script). `test_estimate_gb_matches_registry_values`: Bonsai at 32768 / `q8_0` → `5.54 + 34*32/1024 + 0.55`. `test_gpu_budget`: `gpu_budget_gb(16) == 11.0`. `test_parse_tokens_cases`: `"48k"→49152`, `"49152"→49152`, and `ValueError` for `"abc"`, `"0"`, `"-5k"`. `test_clamp_ctx`: `clamp_ctx(100, 262144) == 1024`, `clamp_ctx(10**9, 262144) == 262144`. `test_state_roundtrip_and_mode`: saved file has `stat().st_mode & 0o777 == 0o600`. `test_load_state_corrupt_returns_empty`. `test_merge_defaults_old_chat_entry`: a saved `{"mode": "chat", "kv": "q8_0", "ctx": 32768, "effort": "xhigh", "max_tokens": 16384}` merged then switched to `mode="server"` has `expose == "local"` and `port == 8080`. `test_build_command_server_local` (host `127.0.0.1`, `-np 1`, `--alias`, no `--api-key`), `test_build_command_lan_has_key` (host `0.0.0.0`, `--api-key sk-x`), `test_build_command_chat_uses_llama_cli_with_n`. `test_snippets_lan_uses_given_ip` (monkeypatch `lan_ip`), `test_snippets_opencode_is_valid_json`.
 - [ ] **Step 2:** Run `.venv/bin/python -m pytest tests/core -v`. Expected: FAIL (imports).
-- [ ] **Step 3:** Implement the modules by moving the equivalent functions out of `openollama.legacy` (same formulas and flags); `snippets` returns the strings instead of printing them.
+- [ ] **Step 3:** Implement the modules by moving the equivalent functions out of `openllm.legacy` (same formulas and flags); `snippets` returns the strings instead of printing them.
 - [ ] **Step 4:** Run `.venv/bin/python -m pytest tests/core -v`. Expected: PASS.
 - [ ] **Step 5:** Commit: `git add -A && git commit -m "feat: extract UI-free core from launcher script"`.
 
 ### Task 3: Downloads with progress
 
 **Files:**
-- Create: `openollama_app/core/downloads.py`, `tests/core/test_downloads.py`
+- Create: `openllm_app/core/downloads.py`, `tests/core/test_downloads.py`
 
 **Interfaces:**
 - Consumes: `registry.runtime_dir`, `registry.model_path`.
@@ -85,7 +85,7 @@
 ### Task 4: ServerProcess
 
 **Files:**
-- Create: `openollama_app/server.py`, `tests/fake_llama_server.py` (stdlib script: argv `--port N --mode ok|exit1|bindfail|slowstart`; serves `GET /health`; prints a few log lines), `tests/test_server.py`
+- Create: `openllm_app/server.py`, `tests/fake_llama_server.py` (stdlib script: argv `--port N --mode ok|exit1|bindfail|slowstart`; serves `GET /health`; prints a few log lines), `tests/test_server.py`
 
 **Interfaces:**
 - Consumes: argv from `cmdline.build_command`.
@@ -99,7 +99,7 @@
 ### Task 5: Streaming chat client
 
 **Files:**
-- Create: `openollama_app/client.py`, `tests/test_client.py`
+- Create: `openllm_app/client.py`, `tests/test_client.py`
 
 **Interfaces:**
 - Produces: `@dataclass ChatEvent(kind: Literal["reasoning","content","usage","timings","done","error"], text: str = "", data: dict | None = None)`; `async stream_chat(base_url: str, api_key: str | None, model_id: str, messages: list[dict], max_tokens: int) -> AsyncIterator[ChatEvent]`. It POSTs `{"model", "messages", "max_tokens", "stream": true}` with `Authorization: Bearer <key>` when a key is given. `delta.reasoning_content` → `reasoning`; `delta.content` → `content`; the chunk's `usage` → `usage` (`data={"prompt_tokens", "completion_tokens"}`); the chunk's `timings` → `timings` (`data` has `predicted_per_second`); `[DONE]` → `done`. A transport error or non-200 → one `error` event, then the generator ends.
@@ -114,22 +114,22 @@
 ### Task 6: App shell and Models screen
 
 **Files:**
-- Create: `openollama_app/ui/{__init__,app,models_screen,widgets}.py`, `tests/ui/test_models_screen.py`
+- Create: `openllm_app/ui/{__init__,app,models_screen,widgets}.py`, `tests/ui/test_models_screen.py`
 
 **Interfaces:**
 - Consumes: `registry`, `state`, `memory`, `downloads` (Task 2–3).
-- Produces: `class OpenOllamaApp(App)` with `__init__(root: Path)`, loading registry and state; `class ModelsScreen(Screen)`; `widgets.MemoryGauge(Static)` with `update_estimate(used_gb: float, budget_gb: float)` (adds CSS class `over` when `used > budget`); message `ModelsScreen.StartRequested(model_id: str, settings: dict)`. Settings widgets: `RadioSet` for mode/KV/effort/expose, a context stepper over the presets plus an `Input` for a custom value, an `Input` for port. Keys: `enter` start, `d` download, `l` apply last, `q` quit.
+- Produces: `class OpenLLMApp(App)` with `__init__(root: Path)`, loading registry and state; `class ModelsScreen(Screen)`; `widgets.MemoryGauge(Static)` with `update_estimate(used_gb: float, budget_gb: float)` (adds CSS class `over` when `used > budget`); message `ModelsScreen.StartRequested(model_id: str, settings: dict)`. Settings widgets: `RadioSet` for mode/KV/effort/expose, a context stepper over the presets plus an `Input` for a custom value, an `Input` for port. Keys: `enter` start, `d` download, `l` apply last, `q` quit.
 
 - [ ] **Step 1: Write failing pilot tests** using `app.run_test()` with a `tmp_path` root containing a small `models.json`: `test_gauge_updates_when_kv_changes` (select `q4_0` → gauge value equals `estimate_gb(m, ctx, "q4_0")`), `test_gauge_red_when_over_budget` (monkeypatch `total_ram_gb` to 8 → `over` class present at 128K), `test_custom_context_garbage_is_rejected` (type `abc`, `0`, `-5k`, `9999999k`: the settings panel keeps its previous valid ctx and shows an inline error for the first three, clamps the last to `max_ctx`), `test_last_settings_old_chat_entry_fills_defaults` (state has an old chat-mode entry; press `l` with server mode → no exception, `port == 8080`), `test_not_downloaded_model_blocks_start_and_offers_download` (Enter shows "press d to download" instead of starting), `test_enter_posts_start_requested_and_saves_state` (state file updated with the chosen settings).
 - [ ] **Step 2:** Run `.venv/bin/python -m pytest tests/ui -v`. Expected: FAIL.
-- [ ] **Step 3:** Implement. Settings changes call `memory.estimate_gb` and update the gauge on every change. `d` runs `downloads.install_runtime` / `fetch_model` in a Textual worker thread and shows a `ProgressBar` fed through `call_from_thread`. Wire `openollama` so `run` starts `OpenOllamaApp(root).run()`.
-- [ ] **Step 4:** Run the tests. Expected: PASS. Manual check: `./openollama` shows the Models screen and the gauge reacts to arrow keys and mouse clicks.
+- [ ] **Step 3:** Implement. Settings changes call `memory.estimate_gb` and update the gauge on every change. `d` runs `downloads.install_runtime` / `fetch_model` in a Textual worker thread and shows a `ProgressBar` fed through `call_from_thread`. Wire `openllm` so `run` starts `OpenLLMApp(root).run()`.
+- [ ] **Step 4:** Run the tests. Expected: PASS. Manual check: `./openllm` shows the Models screen and the gauge reacts to arrow keys and mouse clicks.
 - [ ] **Step 5:** Commit: `git add -A && git commit -m "feat: Textual app shell and Models screen"`.
 
 ### Task 7: Run screen (Chat, Log, Connect)
 
 **Files:**
-- Create: `openollama_app/ui/run_screen.py`; extend `openollama_app/ui/widgets.py` (`LogPane`, `ChatPane`, `ThinkingBlock`); `tests/ui/test_run_screen.py`
+- Create: `openllm_app/ui/run_screen.py`; extend `openllm_app/ui/widgets.py` (`LogPane`, `ChatPane`, `ThinkingBlock`); `tests/ui/test_run_screen.py`
 
 **Interfaces:**
 - Consumes: `ServerProcess` (Task 4), `stream_chat` (Task 5), `build_command`, `client_snippets`.
@@ -139,21 +139,21 @@
 - [ ] **Step 2:** Run `.venv/bin/python -m pytest tests/ui/test_run_screen.py -v`. Expected: FAIL.
 - [ ] **Step 3:** Implement. Server callbacks arrive on threads and are marshalled with `app.call_from_thread`; chat runs in an `asyncio` worker that is cancellable; the screen calls `install_cleanup` on the real server in `on_mount`. Connect `ModelsScreen.StartRequested` to push `RunScreen`; for `chat` mode, push `RunScreen` with an in-app server as well (the UI replaces `llama-cli`).
 - [ ] **Step 4:** Run `.venv/bin/python -m pytest tests -v`. Expected: PASS.
-- [ ] **Step 5: Manual check with the real model.** `./openollama` → Start → wait for `ready` → send "explain ternary weights" → thinking streams and collapses, tokens/sec appears, `s` stops the server; confirm with `pgrep llama-server` that no process remains, including after quitting with `q` mid-load.
+- [ ] **Step 5: Manual check with the real model.** `./openllm` → Start → wait for `ready` → send "explain ternary weights" → thinking streams and collapses, tokens/sec appears, `s` stops the server; confirm with `pgrep llama-server` that no process remains, including after quitting with `q` mid-load.
 - [ ] **Step 6:** Commit: `git add -A && git commit -m "feat: Run screen with chat, log and connect tabs"`.
 
 ### Task 8: Headless `--last` and cleanup of the old launcher
 
 **Files:**
-- Modify: `openollama` (remove the `legacy` fallback), `openollama_app/__main__.py` (new: `main(argv)`); Delete: `openollama.legacy`
+- Modify: `openllm` (remove the `legacy` fallback), `openllm_app/__main__.py` (new: `main(argv)`); Delete: `openllm.legacy`
 - Create: `tests/test_headless.py`
 
 **Interfaces:**
 - Consumes: `core.*`, `ServerProcess`, `client_snippets`.
-- Produces: `openollama_app.__main__.main(argv: list[str]) -> int`; `--last` starts the saved model's server without the UI, prints the connection info (same fields as the old banner) and blocks until Ctrl+C, then stops the server. `--last` with no saved state exits 1 with a message. When the saved mode is `chat`, `--last` keeps the old behaviour and `execv`s `llama-cli` (the spec keeps `llama-cli` for the headless path only).
+- Produces: `openllm_app.__main__.main(argv: list[str]) -> int`; `--last` starts the saved model's server without the UI, prints the connection info (same fields as the old banner) and blocks until Ctrl+C, then stops the server. `--last` with no saved state exits 1 with a message. When the saved mode is `chat`, `--last` keeps the old behaviour and `execv`s `llama-cli` (the spec keeps `llama-cli` for the headless path only).
 
 - [ ] **Step 1: Write failing tests.** `test_last_without_state_exits_1`, `test_last_chat_mode_execs_llama_cli` (monkeypatch `os.execv`, assert argv[0] ends in `llama-cli`), `test_last_starts_server_prints_base_url_and_stops_on_sigint` (use the `fake_llama_server` through a test registry; send SIGINT; assert exit code 0 and the child is gone).
 - [ ] **Step 2:** Run `.venv/bin/python -m pytest tests/test_headless.py -v`. Expected: FAIL.
-- [ ] **Step 3:** Implement `main`; delete `openollama.legacy`; make `openollama` always bootstrap then call `main(sys.argv[1:])`.
-- [ ] **Step 4:** Run `.venv/bin/python -m pytest tests -v`. Expected: all PASS. Manual: `./openollama --last` serves on the saved port and Ctrl+C leaves no `llama-server` process.
+- [ ] **Step 3:** Implement `main`; delete `openllm.legacy`; make `openllm` always bootstrap then call `main(sys.argv[1:])`.
+- [ ] **Step 4:** Run `.venv/bin/python -m pytest tests -v`. Expected: all PASS. Manual: `./openllm --last` serves on the saved port and Ctrl+C leaves no `llama-server` process.
 - [ ] **Step 5:** Commit: `git add -A && git commit -m "feat: headless --last and remove legacy launcher"`.

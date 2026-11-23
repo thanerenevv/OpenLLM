@@ -11,12 +11,20 @@ REGISTRY = {
             "tag": "prism-test",
             "url": "https://example.invalid/llama-{tag}.tar.gz",
             "dir": "runtimes/prismml/{tag}",
-        }
+        },
+        "llamacpp": {
+            "adapter": "llama.cpp",
+            "description": "Upstream llama.cpp",
+            "tag": "b-test",
+            "url": "https://example.invalid/llama-{tag}.tar.gz",
+            "dir": "runtimes/llamacpp/{tag}",
+        },
     },
     "models": {
         "ternary-bonsai-2-27b": {
             "name": "Ternary Bonsai 2 27B",
             "runtime": "prismml",
+            "runtimes": ["prismml"],
             "repo": "prism-ml/Ternary-Bonsai-2-27B-gguf",
             "file": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
             "size_gb": 5.95,

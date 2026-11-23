@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from openollama_app.server import ServerProcess
+from openllm_app.server import ServerProcess
 
 FAKE = str(Path(__file__).parent / "fake_llama_server.py")
 
@@ -121,7 +121,7 @@ def test_cleanup_kills_child_when_parent_exits(tmp_path):
     script.write_text(textwrap.dedent(f"""
         import sys, time
         sys.path.insert(0, {str(Path(__file__).parent.parent)!r})
-        from openollama_app.server import ServerProcess, install_cleanup
+        from openllm_app.server import ServerProcess, install_cleanup
         sp = ServerProcess([sys.executable, {FAKE!r}, "--port", sys.argv[1]], "127.0.0.1", int(sys.argv[1]), lambda l: None, lambda s: None)
         install_cleanup(sp)
         sp.start()
@@ -140,7 +140,7 @@ def test_cleanup_kills_child_on_sigterm(tmp_path):
     script.write_text(textwrap.dedent(f"""
         import sys, time
         sys.path.insert(0, {str(Path(__file__).parent.parent)!r})
-        from openollama_app.server import ServerProcess, install_cleanup
+        from openllm_app.server import ServerProcess, install_cleanup
         sp = ServerProcess([sys.executable, {FAKE!r}, "--port", sys.argv[1]], "127.0.0.1", int(sys.argv[1]), lambda l: None, lambda s: None)
         install_cleanup(sp)
         sp.start()

@@ -1,6 +1,6 @@
 import json
 
-from openollama_app.core import cmdline
+from openllm_app.core import cmdline
 
 BASE = {"mode": "server", "kv": "q8_0", "ctx": 32768, "effort": "xhigh",
         "expose": "local", "port": 8080, "max_tokens": 16384, "model_id": "ternary-bonsai-2-27b"}
@@ -35,6 +35,17 @@ def test_build_command_chat_uses_llama_cli_with_n(root, runtime, model):
     argv = cmdline.build_command(root, runtime, model, s, None)
     assert argv[0].endswith("llama-cli") and pair(argv, "-n") == "16384"
     assert "--host" not in argv
+
+
+def test_runtime_ubatch_is_passed_through(root, runtime, model):
+    for mode in ("server", "chat"):
+        argv = cmdline.build_command(root, {**runtime, "ubatch": 256}, model, {**BASE, "mode": mode}, None)
+        assert pair(argv, "-ub") == "256"
+
+
+def test_no_ubatch_flag_without_runtime_setting(root, runtime, model):
+    rt = {k: v for k, v in runtime.items() if k != "ubatch"}
+    assert "-ub" not in cmdline.build_command(root, rt, model, dict(BASE), None)
 
 
 def test_adapters_keyed_by_adapter_name():

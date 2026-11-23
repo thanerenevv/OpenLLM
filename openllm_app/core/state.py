@@ -35,12 +35,14 @@ def merge_defaults(m: dict, saved: dict) -> dict:
     if not isinstance(saved, dict):
         saved = {}
     s = {"mode": "server", "kv": "q8_0", "ctx": 32768, "effort": m["reasoning_efforts"][-1],
-         "expose": "local", "port": 8080, "max_tokens": 16384}
+         "expose": "local", "port": 8080, "max_tokens": 16384, "runtime": m["runtime"]}
     s.update({k: v for k, v in saved.items() if k in s})
     if s["kv"] not in KV_CHOICES:
         s["kv"] = "q8_0"
     if s["effort"] not in m["reasoning_efforts"]:
         s["effort"] = m["reasoning_efforts"][-1]
+    if s["runtime"] not in (m.get("runtimes") or [m["runtime"]]):
+        s["runtime"] = m["runtime"]
     if s["mode"] not in ("server", "chat"):
         s["mode"] = "server"
     if s["expose"] not in ("local", "lan"):

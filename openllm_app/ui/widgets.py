@@ -138,3 +138,73 @@ class SnippetBox(Static):
     def __init__(self, snippet: str, **kw):
         super().__init__(snippet, markup=False, **kw)
         self.snippet = snippet
+
+
+# ------------------------------------------------------------------ selector
+from rich.text import Text  # noqa: E402
+from textual.binding import Binding  # noqa: E402
+from textual.message import Message  # noqa: E402
+from textual.widget import Widget  # noqa: E402
+
+
+class Cycler(Widget, can_focus=True):
+    """A titled `< value >` selector: Left/Right (or a click on either half) steps through the options."""
+
+    DEFAULT_CSS = """
+    Cycler { width: 100%; height: 4; padding: 0 1; border: round ansi_bright_black; background: transparent; }
+    Cycler:focus { border: round $accent; }
+    Cycler.single { opacity: 70%; }
+    """
+    BINDINGS = [Binding("left,h", "step(-1)", "Previous", show=False),
+                Binding("right,l", "step(1)", "Next", show=False)]
+
+    class Changed(Message):
+        def __init__(self, cycler: "Cycler", value: str) -> None:
+            super().__init__()
+            self.cycler, self.value = cycler, value
+
+    def __init__(self, title: str, options: list[tuple[str, str]], value: str, **kw) -> None:
+        super().__init__(**kw)
+        self.title = title
+        self.options: list[tuple[str, str]] = []
+        self._value = value
+        self.set_options(options, value)
+
+    @property
+    def value(self) -> str:
+        return self._value
+
+    @property
+    def label(self) -> str:
+        return dict(self.options).get(self._value, self._value)
+
+    def set_options(self, options: list[tuple[str, str]], value: str) -> None:
+        self.options = list(options)
+        self._value = value if value in dict(self.options) else (self.options[0][0] if self.options else value)
+        self.set_class(len(self.options) <= 1, "single")
+        self.refresh()
+
+    def select(self, value: str) -> None:
+        """Choose an option programmatically (posts Changed like a keypress does)."""
+        if value in dict(self.options) and value != self._value:
+            self._value = value
+            self.refresh()
+            self.post_message(self.Changed(self, value))
+
+    def action_step(self, delta: int) -> None:
+        keys = [k for k, _ in self.options]
+        if len(keys) > 1:
+            self.select(keys[(keys.index(self._value) + delta) % len(keys)])
+
+    def on_click(self, event) -> None:
+        self.focus()
+        self.action_step(-1 if event.x < self.size.width // 2 else 1)
+
+    def render(self) -> Text:
+        arrows = len(self.options) > 1
+        out = Text(self.title + "\n", style="bold")
+        out.append("< " if arrows else "  ", style="dim")
+        out.append(self.label)
+        out.append(" >" if arrows else "")
+        return out
+

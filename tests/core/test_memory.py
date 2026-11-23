@@ -1,6 +1,6 @@
 import pytest
 
-from openollama_app.core import memory
+from openllm_app.core import memory
 
 
 def test_estimate_gb_matches_registry_values(model):

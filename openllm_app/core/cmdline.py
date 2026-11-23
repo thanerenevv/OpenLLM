@@ -15,6 +15,8 @@ def build_llama_cmd(root: Path, rt: dict, m: dict, s: dict, api_key: str | None)
         "--jinja",
         "--chat-template-kwargs", json.dumps({"reasoning_effort": s["effort"]}),
     ]
+    if rt.get("ubatch"):  # per-runtime micro-batch, tuned by benchmark (see models.json)
+        base += ["-ub", str(rt["ubatch"])]
     if s["mode"] == "chat":
         return [str(runtime_bin(root, rt, "llama-cli")), *base, "-n", str(s["max_tokens"])]
     host = "0.0.0.0" if s["expose"] == "lan" else "127.0.0.1"

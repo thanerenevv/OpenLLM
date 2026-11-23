@@ -1,6 +1,6 @@
 import json
 
-from openollama_app.core import snippets
+from openllm_app.core import snippets
 
 S = {"expose": "local", "port": 8080, "ctx": 32768, "model_id": "ternary-bonsai-2-27b",
      "model_name": "Ternary Bonsai 2 27B"}
@@ -21,10 +21,10 @@ def test_lan_uses_given_ip(monkeypatch):
 
 def test_opencode_is_valid_json():
     cfg = json.loads(snippets.client_snippets(S, None)["opencode"])
-    prov = cfg["provider"]["openollama"]
+    prov = cfg["provider"]["openllm"]
     assert prov["options"]["baseURL"] == "http://127.0.0.1:8080/v1"
     assert prov["models"]["ternary-bonsai-2-27b"]["limit"] == {"context": 32768, "output": 16384}
-    assert cfg["model"] == "openollama/ternary-bonsai-2-27b"
+    assert cfg["model"] == "openllm/ternary-bonsai-2-27b"
 
 
 def test_cline_snippet_mentions_context():

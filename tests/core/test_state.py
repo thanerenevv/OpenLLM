@@ -1,6 +1,6 @@
 import pytest
 
-from openollama_app.core import state
+from openllm_app.core import state
 
 
 def test_state_roundtrip_and_mode(tmp_path):
@@ -23,7 +23,7 @@ def test_load_state_corrupt_returns_empty(tmp_path):
 def test_merge_defaults_empty(model):
     s = state.merge_defaults(model, {})
     assert s == {"mode": "server", "kv": "q8_0", "ctx": 32768, "effort": "xhigh",
-                 "expose": "local", "port": 8080, "max_tokens": 16384}
+                 "expose": "local", "port": 8080, "max_tokens": 16384, "runtime": "prismml"}
 
 
 def test_merge_defaults_old_chat_entry(model):
@@ -53,3 +53,18 @@ def test_merge_defaults_tolerates_non_dict_entry(model, saved):
 def test_merge_defaults_keeps_valid_port_and_max_tokens(model):
     s = state.merge_defaults(model, {"port": "9000", "max_tokens": 4096})
     assert s["port"] == 9000 and s["max_tokens"] == 4096
+
+
+def test_runtime_defaults_to_the_models_own(model):
+    assert state.merge_defaults({**model, "runtime": "llamacpp", "runtimes": ["llamacpp", "prismml"]}, {})["runtime"] == "llamacpp"
+
+
+def test_saved_runtime_is_kept_when_the_model_allows_it(model):
+    m = {**model, "runtimes": ["prismml", "llamacpp"]}
+    assert state.merge_defaults(m, {"runtime": "llamacpp"})["runtime"] == "llamacpp"
+
+
+@pytest.mark.parametrize("saved", ["llamacpp", "nonesuch", None, 5, ["prismml"]])
+def test_saved_runtime_the_model_does_not_allow_falls_back_to_default(model, saved):
+    # the fixture model only allows prismml
+    assert state.merge_defaults(model, {"runtime": saved})["runtime"] == "prismml"
