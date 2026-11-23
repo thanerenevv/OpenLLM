@@ -33,7 +33,7 @@ class MemoryGauge(Static):
 # ------------------------------------------------------------------ chat / log
 from collections import deque  # noqa: E402
 
-from textual.containers import VerticalScroll  # noqa: E402
+from textual.containers import Vertical, VerticalScroll  # noqa: E402
 from textual.widgets import Collapsible, RichLog  # noqa: E402
 
 
@@ -49,9 +49,69 @@ class Line(Static):
         self.update(self.text)
 
 
+class StreamText(Vertical):
+    """Text that grows token by token, cheap to render however long it gets.
+
+    Re-rendering one ever-growing Static on every token re-wraps and re-lays-out the whole reply, which
+    is quadratic: a 16K-token thinking trace made the UI fall seconds behind. Instead, appends only
+    collect text; flush() (called a few dozen times a second by ChatPane) pushes it to a live tail
+    Static, and once the tail is long it is frozen at its last newline and a fresh tail started, so
+    each render only touches the last few thousand characters. Splitting only at newlines keeps the
+    on-screen wrapping identical to a single Static.
+    """
+
+    DEFAULT_CSS = "StreamText { height: auto; } StreamText > Static { height: auto; }"
+    CHUNK = 2000  # characters a live tail may hold before it is frozen at its last newline
+
+    def __init__(self, text: str = "", **kw):
+        super().__init__(**kw)
+        self._parts: list[str] = [text]
+        self._joined = text  # cache of "".join(self._parts)
+        self._shown = 0  # characters of the text already handed to child widgets
+        self._tail_text = ""
+        self._tail: Static | None = None
+
+    @property
+    def text(self) -> str:
+        if len(self._parts) > 1:
+            self._joined = "".join(self._parts)
+            self._parts = [self._joined]
+        return self._joined
+
+    @property
+    def dirty(self) -> bool:
+        return self._shown < len(self.text)
+
+    def compose(self):
+        self._tail = Static("", markup=False)
+        yield self._tail
+
+    def on_mount(self) -> None:
+        self.flush()
+
+    def append(self, more: str) -> None:
+        self._parts.append(more)
+
+    def flush(self) -> None:
+        if self._tail is None or not self.dirty:
+            return
+        text = self.text
+        tail = self._tail_text + text[self._shown:]
+        self._shown = len(text)
+        if len(tail) > self.CHUNK and (cut := tail.rfind("\n")) > 0:
+            self._tail.update(tail[:cut])  # frozen: never re-rendered again
+            tail = tail[cut + 1:]
+            self._tail = Static(tail, markup=False)
+            self.mount(self._tail)
+        else:
+            self._tail.update(tail)
+        self._tail_text = tail
+
+
 class ThinkingBlock(Collapsible):
     def __init__(self):
-        self._body = Line("")
+        self._body = StreamText()
+        self._finished = False
         super().__init__(self._body, title="thinking…", collapsed=False)
 
     @property
@@ -59,9 +119,17 @@ class ThinkingBlock(Collapsible):
         return self._body.text
 
     def append(self, more: str) -> None:
+        self._finished = False
         self._body.append(more)
 
+    def flush(self) -> None:
+        self._body.flush()
+
     def finish(self) -> None:
+        if self._finished:  # called for every content token; counting words each time was quadratic
+            return
+        self._finished = True
+        self._body.flush()
         self.title = f"thinking ({len(self.text.split())} words)"
         self.collapsed = True
 
@@ -73,16 +141,36 @@ class ChatPane(VerticalScroll):
     ChatPane .notice { color: $warning; }
     ChatPane .error { color: $error; }
     """
+    FRAME = 1 / 30  # streamed text is repainted at most this often, however fast tokens arrive
 
     def __init__(self, **kw):
         super().__init__(**kw)
         self._think: ThinkingBlock | None = None
-        self._reply: Line | None = None
+        self._reply: StreamText | None = None
+        self._flush_timer = None
 
     def _add(self, widget):
+        self.flush()  # keep earlier streamed text above the new widget fully painted
         self.mount(widget)
         self.scroll_end(animate=False)
         return widget
+
+    def _schedule_flush(self) -> None:
+        if self._flush_timer is None:
+            self._flush_timer = self.set_timer(self.FRAME, self.flush)
+
+    def flush(self) -> None:
+        """Paint any streamed text still waiting for the next frame."""
+        if self._flush_timer is not None:
+            self._flush_timer.stop()
+            self._flush_timer = None
+        changed = False
+        for w in (self._think, self._reply):
+            if w is not None and (w._body if isinstance(w, ThinkingBlock) else w).dirty:
+                w.flush()
+                changed = True
+        if changed:
+            self.scroll_end(animate=False)
 
     def add_user(self, text: str) -> None:
         self._add(Line(f"you ▸ {text}", classes="user"))
@@ -94,16 +182,18 @@ class ChatPane(VerticalScroll):
         if self._think is None:
             self._think = self._add(ThinkingBlock())
         self._think.append(text)
+        self._schedule_flush()
 
     def append_content(self, text: str) -> None:
         if self._think is not None:
             self._think.finish()
         if self._reply is None:
-            self._reply = self._add(Line("model ▸ "))
+            self._reply = self._add(StreamText("model ▸ "))
         self._reply.append(text)
-        self.scroll_end(animate=False)
+        self._schedule_flush()
 
     def end_reply(self) -> None:
+        self.flush()
         if self._think is not None:
             self._think.finish()
         self._think = self._reply = None
@@ -113,7 +203,7 @@ class ChatPane(VerticalScroll):
         for w in self.children:
             if isinstance(w, ThinkingBlock):
                 parts.append(f"[thinking] {w.text}")
-            elif isinstance(w, Line):
+            elif isinstance(w, (Line, StreamText)):
                 parts.append(w.text)
         return "\n".join(parts)
 
@@ -124,8 +214,12 @@ class LogPane(RichLog):
         self.texts: deque[str] = deque(maxlen=5000)
 
     def add(self, line: str) -> None:
-        self.texts.append(line)
-        self.write(line)
+        self.add_many([line])
+
+    def add_many(self, lines: list[str]) -> None:
+        """Write a burst of server output as one renderable (one wrap and one refresh, not one per line)."""
+        self.texts.extend(lines)
+        self.write("\n".join(lines))
 
 
 class SnippetBox(Static):

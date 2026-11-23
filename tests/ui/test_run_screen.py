@@ -7,7 +7,7 @@ from openllm_app.core import memory
 from openllm_app.ui.app import OpenLLMApp
 from openllm_app.ui.model_screen import ModelScreen
 from openllm_app.ui.run_screen import ConfirmStop, RunScreen
-from openllm_app.ui.widgets import ChatPane, LogPane, ThinkingBlock
+from openllm_app.ui.widgets import ChatPane, LogPane, StreamText, ThinkingBlock
 
 from .fakes import Factory, ev, scripted_chat
 from .test_models_screen import MID, SIZE, open_model, setup_root
@@ -64,6 +64,49 @@ async def test_log_lines_appear_in_log_tab(root, registry):
         await pilot.pause()
         assert "loading tensors" in app.screen.query_one(LogPane).texts
     await launch(root, registry, run)
+
+
+async def test_log_lines_from_a_thread_do_not_block_and_keep_order(root, registry):
+    import threading
+    import time
+
+    async def run(app, pilot, server):
+        blocked = []
+
+        def emit():  # like ServerProcess's reader thread: must never wait on the UI
+            t = time.perf_counter()
+            for i in range(500):
+                server.emit_line(f"line {i}")
+            server.set_state("ready")
+            blocked.append(time.perf_counter() - t)
+
+        th = threading.Thread(target=emit)
+        th.start()
+        th.join(5)  # the UI loop is not running while we wait, so a blocking marshal would hang here
+        assert blocked and not th.is_alive()
+        await pilot.pause()
+        assert list(app.screen.query_one(LogPane).texts) == [f"line {i}" for i in range(500)]
+        assert app.screen.server_state == "ready"
+    await launch(root, registry, run)
+
+
+async def test_long_streams_are_split_into_chunks_without_losing_text(root, registry):
+    para = "word " * 30 + "\n"
+    chat = scripted_chat([ev("reasoning", para) for _ in range(100)]
+                         + [ev("content", para) for _ in range(200)] + [FINISH])
+
+    async def run(app, pilot, server):
+        server.set_state("ready")
+        await pilot.pause()
+        await send(app, pilot, "hi")
+        pane = app.screen.query_one(ChatPane)
+        reply = [w for w in pane.children if isinstance(w, StreamText)][0]
+        assert reply.text == "model ▸ " + para * 200
+        chunks = [str(s.render()) for s in reply.children]
+        assert len(chunks) > 1  # frozen pieces plus a live tail, so a render touches only the tail
+        assert "\n".join(chunks) == reply.text  # split only at newlines: same lines as one widget
+        assert pane.query_one(ThinkingBlock).text == para * 100
+    await launch(root, registry, run, chat=chat)
 
 
 async def test_chat_streams_reasoning_then_content(root, registry):

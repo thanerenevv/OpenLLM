@@ -8,8 +8,6 @@ import json
 from dataclasses import dataclass
 from typing import AsyncIterator, Literal
 
-import httpx
-
 Kind = Literal["reasoning", "content", "usage", "timings", "done", "error"]
 
 
@@ -22,6 +20,8 @@ class ChatEvent:
 
 async def stream_chat(base_url: str, api_key: str | None, model_id: str,
                       messages: list[dict], max_tokens: int) -> AsyncIterator[ChatEvent]:
+    import httpx  # imported on first use: it is a fifth of the UI's start-up import time
+
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     body = {"model": model_id, "messages": messages, "max_tokens": max_tokens, "stream": True}
     finish, saw_content, finished, saw_usage = None, False, False, False

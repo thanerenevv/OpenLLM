@@ -63,6 +63,18 @@ async def test_gauge_updates_when_kv_changes(root, registry, model):
         assert gauge.used == pytest.approx(memory.estimate_gb(model, 32768, "q4_0"))
 
 
+async def test_ram_is_read_once_not_on_every_setting_change(root, registry, monkeypatch):
+    calls = []
+    monkeypatch.setattr(memory, "total_ram_gb", lambda: calls.append(1) or 64.0)
+    setup_root(root, registry)
+    app = OpenLLMApp(root)
+    async with app.run_test(size=SIZE) as pilot:
+        await open_model(app, pilot)
+        app.screen.query_one("#kv", Cycler).focus()
+        await pilot.press("right", "right", "left")
+        assert len(calls) == 1
+
+
 async def test_gauge_red_when_over_budget(root, registry, monkeypatch):
     setup_root(root, registry)
     monkeypatch.setattr(memory, "total_ram_gb", lambda: 8.0)

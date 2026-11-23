@@ -71,6 +71,7 @@ class ModelScreen(Screen):
         self._status_error = False
         self._port_ok = True
         self._downloading = False
+        self._budget: float | None = None
 
     def _ensure_init(self) -> None:
         if not self.settings:
@@ -140,7 +141,9 @@ class ModelScreen(Screen):
 
     def _estimate(self) -> tuple[float, float]:
         used = memory.estimate_gb(self.model, self.settings["ctx"], self.settings["kv"])
-        return used, memory.gpu_budget_gb(memory.total_ram_gb())
+        if self._budget is None:  # RAM doesn't change; asking sysctl on every keypress spawned a process each time
+            self._budget = memory.gpu_budget_gb(memory.total_ram_gb())
+        return used, self._budget
 
     def _apply_mode_visibility(self) -> None:
         server = self.settings["mode"] == "server"

@@ -99,6 +99,21 @@ def test_download_reports_progress_and_finishes(tmp_path, server):
     assert [d for d, _ in seen] == sorted(d for d, _ in seen)
 
 
+def test_download_does_not_wait_for_the_size_lookup(tmp_path, server, monkeypatch):
+    import time
+
+    def slow_size(url):
+        time.sleep(3)  # a slow HEAD through redirects
+        return len(PAYLOAD)
+
+    monkeypatch.setattr(downloads, "remote_size", slow_size)
+    dest, seen = tmp_path / "f.bin", []
+    t = time.perf_counter()
+    downloads.download(f"{server}/f", dest, lambda done, total: seen.append((done, total)))
+    assert time.perf_counter() - t < 2.5
+    assert dest.read_bytes() == PAYLOAD and seen[-1] == (len(PAYLOAD), len(PAYLOAD))
+
+
 def test_download_resumes_partial_file(tmp_path, server):
     dest = tmp_path / "f.bin"
     dest.write_bytes(PAYLOAD[: len(PAYLOAD) // 2])

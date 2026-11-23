@@ -38,11 +38,14 @@ def remote_size(url: str) -> int | None:
 
 def download(url: str, dest: Path, on_progress: Progress) -> None:
     """Download url to dest, resuming a partial file. Calls on_progress(done_bytes, total_bytes_or_None)."""
-    total = remote_size(url)
     proc = subprocess.Popen(
         ["curl", "-fL", "-C", "-", "--retry", "5", "-sS", "-o", str(dest), url],
         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     stop = threading.Event()
+    total: list[int | None] = [None]
+
+    def find_total() -> None:  # the HEAD request (redirects, up to 15s) runs alongside the transfer, not before it
+        total[0] = remote_size(url)
 
     def size() -> int:
         try:
@@ -52,8 +55,9 @@ def download(url: str, dest: Path, on_progress: Progress) -> None:
 
     def poll():
         while not stop.wait(0.25):
-            on_progress(size(), total)
+            on_progress(size(), total[0])
 
+    threading.Thread(target=find_total, daemon=True).start()
     t = threading.Thread(target=poll, daemon=True)
     t.start()
     err = proc.communicate()[1]
@@ -62,7 +66,7 @@ def download(url: str, dest: Path, on_progress: Progress) -> None:
     if proc.returncode != 0:
         raise DownloadError(f"download failed: {url}: {err.strip() or 'curl exit ' + str(proc.returncode)} (re-run to resume)")
     done = size()
-    on_progress(done, total if total is not None else done)
+    on_progress(done, total[0] if total[0] is not None else done)
 
 
 def safe_extract(archive: Path, dest_dir: Path) -> None:

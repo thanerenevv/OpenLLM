@@ -1,5 +1,6 @@
 """Run screen: header status, Chat / Log / Connect tabs, and stop-the-server control."""
 import asyncio
+import contextvars
 import threading
 from typing import Callable
 
@@ -88,6 +89,11 @@ class RunScreen(Screen):
         self._stopping = self._closing = False
         self._fail_text = ""
         self._ui_thread = threading.get_ident()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._ui_context: contextvars.Context | None = None  # Textual's active_app etc., for _drain
+        self._inbox: list[tuple[Callable, tuple]] = []  # server events waiting for the UI thread
+        self._inbox_lock = threading.Lock()
+        self._header_shown = ""
 
     # ----------------------------------------------------------- derived values
     @property
@@ -148,6 +154,8 @@ class RunScreen(Screen):
 
     # --------------------------------------------------------------- lifecycle
     def on_mount(self) -> None:
+        self._loop = asyncio.get_running_loop()
+        self._ui_context = contextvars.copy_context()
         s = {**self.settings, "mode": "server", "model_id": self.model_id, "port": self.port}
         if self.settings.get("mode") == "chat":
             s["expose"] = "local"
@@ -167,15 +175,45 @@ class RunScreen(Screen):
             self.server.stop(3.0)
 
     def _marshal(self, fn, *args) -> None:
+        """Run fn(*args) on the UI thread, in order, without blocking the caller.
+
+        The server's reader thread calls this for every output line. call_from_thread would make it
+        wait for the UI on each line; while the UI was busy (say, painting a long reply) the pipe
+        could fill up and stall llama-server itself on writing its log. Instead events queue up here and
+        are drained in one batch per event-loop turn.
+        """
         if self._closing:
             return
         if threading.get_ident() == self._ui_thread:
+            self._drain()  # anything queued from a thread comes first
             fn(*args)
             return
+        with self._inbox_lock:
+            self._inbox.append((fn, args))
+            if len(self._inbox) > 1:
+                return  # a drain is already scheduled
         try:
-            self.app.call_from_thread(fn, *args)
-        except RuntimeError:  # app already shutting down
-            pass
+            self._loop.call_soon_threadsafe(self._drain, context=self._ui_context)
+        except (AttributeError, RuntimeError):  # not mounted yet, or the loop is closed (app exiting)
+            with self._inbox_lock:
+                self._inbox.clear()  # so a later event schedules a drain again rather than queueing forever
+
+    def _drain(self) -> None:
+        with self._inbox_lock:
+            batch, self._inbox = self._inbox, []
+        if self._closing:
+            return
+        lines: list[str] = []
+        for fn, args in batch:
+            if fn == self._on_line:
+                lines.append(args[0])
+                continue
+            if lines:
+                self._on_lines(lines)
+                lines = []
+            fn(*args)
+        if lines:
+            self._on_lines(lines)
 
     def _line_from_thread(self, line: str) -> None:
         self._marshal(self._on_line, line)
@@ -185,13 +223,20 @@ class RunScreen(Screen):
 
     # ----------------------------------------------------------------- reactions
     def _refresh_header(self) -> None:
+        text = self.header_text
+        if text == self._header_shown:
+            return  # usage/timings arrive often while a reply streams; most change nothing visible
+        self._header_shown = text
         header = self.query_one("#run-header", Static)
-        header.update(self.header_text)
+        header.update(text)
         header.set_class(self.server_state == "ready", "ready")
         header.set_class(self.server_state == "failed", "failed")
 
     def _on_line(self, line: str) -> None:
-        self.query_one(LogPane).add(line)
+        self._on_lines([line])
+
+    def _on_lines(self, lines: list[str]) -> None:
+        self.query_one(LogPane).add_many(lines)
 
     def _on_state(self, state: str) -> None:
         self.server_state = state
